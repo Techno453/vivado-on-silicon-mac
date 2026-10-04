@@ -1,0 +1,10 @@
+# Configuration for the VHDL LS extension (https://github.com/VHDL-LS/rust_hdl).
+# Lists the files of the design, so that entities and packages are found
+# across files. Vivado's generated copies in deeper folders are left out.
+[libraries]
+design.files = [
+	"*.vhd", "*.vhdl",
+	"*/*.vhd", "*/*.vhdl",
+	"src/**/*.vhd", "hdl/**/*.vhd", "tb/**/*.vhd",
+	"*.srcs/**/*.vhd",
+]

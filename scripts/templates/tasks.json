@@ -1,0 +1,98 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "FPGA: Simulate current testbench",
+			"detail": "Simulates the testbench whose file is open (the entity must be named like the file) and opens the waveforms",
+			"type": "shell",
+			"command": "'@FPGA@' sim '${fileBasenameNoExtension}' '${input:simTime}' && open -a 'Visual Studio Code' 'build/sim/${fileBasenameNoExtension}.vcd'",
+			"options": { "cwd": "${workspaceFolder}" },
+			"group": { "kind": "test", "isDefault": true },
+			"presentation": { "reveal": "always", "clear": true },
+			"problemMatcher": [
+				{
+					"owner": "vivado",
+					"fileLocation": "absolute",
+					"pattern": {
+						"regexp": "^(ERROR|WARNING): \\[([^\\]]+)\\] (.*) \\[(.+):(\\d+)\\]$",
+						"severity": 1,
+						"code": 2,
+						"message": 3,
+						"file": 4,
+						"line": 5
+					}
+				},
+				{
+					"owner": "vivado",
+					"fileLocation": "absolute",
+					"severity": "warning",
+					"pattern": {
+						"regexp": "^CRITICAL WARNING: \\[([^\\]]+)\\] (.*) \\[(.+):(\\d+)\\]$",
+						"code": 1,
+						"message": 2,
+						"file": 3,
+						"line": 4
+					}
+				}
+			]
+		},
+		{
+			"label": "FPGA: Build bitstream",
+			"detail": "Builds the Vivado project in this folder, or the given top-level entity from the sources",
+			"type": "shell",
+			"command": "'@FPGA@' build '${input:top}'",
+			"options": { "cwd": "${workspaceFolder}" },
+			"group": { "kind": "build", "isDefault": true },
+			"presentation": { "reveal": "always", "clear": true },
+			"problemMatcher": [
+				{
+					"owner": "vivado",
+					"fileLocation": "absolute",
+					"pattern": {
+						"regexp": "^(ERROR|WARNING): \\[([^\\]]+)\\] (.*) \\[(.+):(\\d+)\\]$",
+						"severity": 1,
+						"code": 2,
+						"message": 3,
+						"file": 4,
+						"line": 5
+					}
+				},
+				{
+					"owner": "vivado",
+					"fileLocation": "absolute",
+					"severity": "warning",
+					"pattern": {
+						"regexp": "^CRITICAL WARNING: \\[([^\\]]+)\\] (.*) \\[(.+):(\\d+)\\]$",
+						"code": 1,
+						"message": 2,
+						"file": 3,
+						"line": 4
+					}
+				}
+			]
+		},
+		{
+			"label": "FPGA: Program board",
+			"detail": "Programs the newest bitstream in build/ over the board's USB-JTAG",
+			"type": "shell",
+			"command": "'@FPGA@' program",
+			"options": { "cwd": "${workspaceFolder}" },
+			"presentation": { "reveal": "always", "clear": true },
+			"problemMatcher": []
+		}
+	],
+	"inputs": [
+		{
+			"id": "simTime",
+			"type": "promptString",
+			"description": "Simulation time (e.g. 50us, or all if the testbench stops by itself)",
+			"default": "50us"
+		},
+		{
+			"id": "top",
+			"type": "promptString",
+			"description": "Top-level entity (leave empty if this folder has a Vivado project)",
+			"default": ""
+		}
+	]
+}

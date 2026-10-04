@@ -68,6 +68,18 @@ xsim tb_sim
 ```
 Without `-R` or `-tclbatch`, `xsim` opens an interactive Tcl prompt that accepts commands such as `run 50us` or `restart`. To view waveforms on macOS without the GUI, write a VCD file (e.g. `$dumpfile`/`$dumpvars` in a Verilog testbench, or `open_vcd`/`log_vcd` in xsim) and open it with a waveform viewer such as [Surfer](https://surfer-project.org).
 
+### Simulate, build and program with one command
+`bin/fpga` wraps the common steps for a design in the current folder:
+```
+fpga sim <testbench> [time]   # compiles all VHDL/Verilog in dependency order and writes build/sim/<testbench>.vcd
+fpga build [top]              # builds the Vivado project (.xpr) in the folder, or <top> from the sources and .xdc files
+fpga program [bitstream]      # programs the newest bitstream in build/ over the board's FTDI USB-JTAG
+fpga init                     # adds VS Code tasks, a VHDL LS config and .gitignore entries to the folder
+```
+Builds without a Vivado project use the part `xc7z010clg400-1` unless `FPGA_PART` is set. Programming starts xvcd for the FTDI chip it finds (`FPGA_JTAG_INTERFACE` selects the FTDI interface, default 0).
+
+After `fpga init`, the VS Code tasks run these commands: Cmd+Shift+B builds, and the tasks "FPGA: Simulate current testbench" (simulates the testbench open in the editor and opens its waveforms) and "FPGA: Program board" are available under Terminal > Run Task. Errors link to the offending line.
+
 ### Notes
 
 If the installation fails or Vivado crashes, consider:
