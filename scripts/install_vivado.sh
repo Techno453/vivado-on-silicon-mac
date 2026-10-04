@@ -21,9 +21,12 @@ then
 	exit 1
 fi
 
-# Extract installer
-f_echo "Extracting installer"
-eval "$install_bin_path --target /home/user/installer --noexec"
+# Extract installer, unless a previous attempt already did
+if ! [ -x /home/user/installer/xsetup ]
+then
+	f_echo "Extracting installer"
+	eval "$install_bin_path --target /home/user/installer --noexec"
+fi
 
 # Versions without a bundled config get one from the installer itself,
 # since module names change between releases
@@ -49,16 +52,22 @@ then
 	wait_for_user_input
 fi
 
-# Get AuthToken by repeating the following command until it succeeds
-f_echo "Log into your Xilinx account to download the necessary files."
-while ! /home/user/installer/xsetup -b AuthTokenGen
-do
-	f_echo "Your account information seems to be wrong. Please try logging in again."
-	sleep 1
-done
+# Get AuthToken by repeating the following command until it succeeds.
+# A token from a previous attempt is valid for a week, so it is reused for a few days.
+if [ -n "$(find /home/user/.Xilinx/wi_authentication_key -mtime -5 2> /dev/null)" ]
+then
+	f_echo "Reusing the login from the previous installation attempt."
+else
+	f_echo "Log into your Xilinx account to download the necessary files."
+	while ! /home/user/installer/xsetup -b AuthTokenGen
+	do
+		f_echo "Your account information seems to be wrong. Please try logging in again."
+		sleep 1
+	done
+fi
 
 # Run installer
-f_echo "You successfully logged into your account. The installation will begin now."
+f_echo "The installation will begin now."
 eula_args="XilinxEULA,3rdPartyEULA"
 
 # Check if the version is 202110 to include WebTalk terms
@@ -76,6 +85,6 @@ then
     f_echo "Vivado was successfully installed."
     f_echo "Run start_container.sh to launch it."
 else
-    f_echo "An error occurred during installation. Please run cleanup.sh and try again."
+    f_echo "An error occurred during installation. Run run_installer.sh to try again (downloaded files are kept), or cleanup.sh to start over."
     exit 1
 fi
