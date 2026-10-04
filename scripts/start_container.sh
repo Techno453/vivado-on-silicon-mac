@@ -26,7 +26,9 @@ fi
 killall xvcd > /dev/null 2>&1
 
 # run container
-docker run --init --rm --name vivado_container --mount type=bind,source="$script_dir/..",target="/home/user" -p 127.0.0.1:5901:5901 --platform linux/amd64 x64-linux sudo -H -u user bash /home/user/scripts/linux_start.sh &
+# The macOS home folder is mounted at the same path, so projects can be opened
+# from the GUI under the same paths as in macOS, VS Code and xilinx.sh
+docker run --init --rm --name vivado_container --mount type=bind,source="$script_dir/..",target="/home/user" --mount type=bind,source="$HOME",target="$HOME" -p 127.0.0.1:5901:5901 --platform linux/amd64 x64-linux sudo -H -u user bash /home/user/scripts/linux_start.sh &
 f_echo "Started container"
 sleep 7
 f_echo "Starting VNC viewer"
@@ -42,7 +44,7 @@ do
         :
     else
         eval "$script_dir/xvcd/bin/xvcd > /dev/null 2>&1 &"
-        sleep 2
     fi
+    sleep 2
 done
 stop_container

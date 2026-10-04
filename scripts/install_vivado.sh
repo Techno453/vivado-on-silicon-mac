@@ -10,11 +10,38 @@ validate_linux
 install_bin_path=$(tr -d "\n\r\t " < "/home/user/scripts/install_bin")
 
 file_hash=($(md5sum "$install_bin_path"))
-set_vivado_version_from_hash "$file_hash"
+if ! set_vivado_version_from_hash "$file_hash"
+then
+	# version confirmed by the user during setup.sh
+	vivado_version=$(tr -d "\n\r\t " < "/home/user/scripts/install_version")
+fi
+if [ -z "$vivado_version" ]
+then
+	f_echo "Invalid installer hash"
+	exit 1
+fi
 
 # Extract installer
 f_echo "Extracting installer"
 eval "$install_bin_path --target /home/user/installer --noexec"
+
+# Versions without a bundled config get one from the installer itself,
+# since module names change between releases
+install_config="/home/user/scripts/install_configs/${vivado_version}.txt"
+if ! [ -f "$install_config" ]
+then
+	f_echo "No install configuration for $vivado_version yet. Choose the product (Vivado, or Vitis which includes Vivado) and edition:"
+	rm -f /home/user/.Xilinx/install_config.txt
+	if ! /home/user/installer/xsetup -b ConfigGen || ! [ -f /home/user/.Xilinx/install_config.txt ]
+	then
+		f_echo "Generating the install configuration failed."
+		exit 1
+	fi
+	sed "s|^Destination=.*|Destination=/home/user/Xilinx|" /home/user/.Xilinx/install_config.txt > "$install_config"
+	f_echo "The configuration was saved to scripts/install_configs/${vivado_version}.txt"
+	f_echo "To save disk space, open it on macOS now and set unneeded device families in the Modules line from :1 to :0."
+	wait_for_user_input
+fi
 
 # Get AuthToken by repeating the following command until it succeeds
 f_echo "Log into your Xilinx account to download the necessary files."
@@ -36,7 +63,7 @@ if [ "$vivado_version" = "202110" ]; then
     wait_for_user_input
 fi
 
-if /home/user/installer/xsetup -c "/home/user/scripts/install_configs/${vivado_version}.txt" -b Install -a "${eula_args}"
+if /home/user/installer/xsetup -c "$install_config" -b Install -a "${eula_args}"
 then
     f_echo "Vivado was successfully installed."
     f_echo "Run start_container.sh to launch it."

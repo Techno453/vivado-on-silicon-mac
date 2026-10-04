@@ -46,11 +46,17 @@ function wait_for_user_input {
     read
 }
 
+# Both OrbStack and Docker Desktop provide the docker CLI.
+# OrbStack is preferred if installed since it needs less memory.
+function uses_orbstack {
+    [ -d "/Applications/OrbStack.app" ]
+}
+
 function start_docker {
     # check if Docker is installed
     if ! which docker &> /dev/null
     then
-        f_echo "You need to install Docker Desktop first."
+        f_echo "You need to install OrbStack or Docker Desktop first."
         exit 1
     fi
 
@@ -60,13 +66,23 @@ function start_docker {
     # Wait for Docker to start
     while ! docker ps &> /dev/null
     do
-        open -a Docker
+        if uses_orbstack
+        then
+            orb start &> /dev/null
+        else
+            open -a Docker
+        fi
         sleep 5
     done
     sleep 2
 }
 
 function stop_docker {
+    if uses_orbstack
+    then
+        orb stop &> /dev/null
+        return
+    fi
     curl -s -X POST -H 'Content-Type: application/json' -d '{ "openContainerView": true }' -kiv --unix-socket "$HOME/Library/Containers/com.docker.docker/Data/backend.sock" http://localhost/engine/stop &> /dev/null
     osascript -e 'quit app "Docker Desktop"'
     sleep 2
@@ -82,13 +98,37 @@ function set_vivado_version_from_hash {
     then
         vivado_version=${sfd_hashes[$1]}
     else
-        f_echo "Invalid installer hash"
-        exit 1
+        return 1
     fi
     return 0
 }
 
+# Fallback for installers whose hash isn't known yet, e.g.
+# FPGAs_AdaptiveSoCs_Unified_2024.2_1113_1001_Lin64.bin -> 202420
+function set_vivado_version_from_filename {
+    local file_name=$(basename "$1")
+    if [[ $file_name =~ _(20[0-9][0-9])\.([0-9])_[0-9_]*Lin64\.bin$ ]]
+    then
+        if [ -n "$BASH_VERSION" ]
+        then
+            vivado_version="${BASH_REMATCH[1]}${BASH_REMATCH[2]}0"
+        else
+            vivado_version="${match[1]}${match[2]}0"
+        fi
+        return 0
+    fi
+    return 1
+}
+
 # The actual resolution is stored in the file vnc_resolution
 vnc_default_resolution="1920x1080"
+
+# Prints the size of the main display in pixels and its scale factor,
+# e.g. "2880x1800 2" for a Retina display that looks like 1440x900
+function main_display_mode {
+    osascript -l JavaScript -e 'ObjC.import("AppKit");
+        var s = $.NSScreen.screens.objectAtIndex(0), k = s.backingScaleFactor;
+        (s.frame.size.width * k) + "x" + (s.frame.size.height * k) + " " + k' 2> /dev/null
+}
 
 current_user=$(whoami)

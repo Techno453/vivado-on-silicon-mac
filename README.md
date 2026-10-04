@@ -9,6 +9,7 @@ The supported versions are:
 - 2023.1
 - 2023.2
 - 2024.1
+- 2024.2 (and other versions without a bundled install config): the installer is recognized by its file name after you confirm its MD5 against AMD's download page, and `install_vivado.sh` generates the install config with `xsetup -b ConfigGen`, where you can also choose Vitis
 
 Due to unexpected behaviour in Rosetta emulation, most versions of macOS 14 (including 14.5) are not supported. macOS 13 may work, but the above versions were tested on macOS 15.
 
@@ -16,7 +17,7 @@ Due to unexpected behaviour in Rosetta emulation, most versions of macOS 14 (inc
 Expect the installation process to last about one to two hours and download ~20 GB for the web installer.
 
 ### Preparations
-You first need to install [Docker®](https://www.docker.com/products/docker-desktop/) (make sure to choose "Apple Chip" instead of "Intel Chip"). You may find it useful to disable the option "Open Docker Dashboard when Docker Desktop starts".
+You first need to install [OrbStack](https://orbstack.dev) (recommended, since it uses less memory and battery and starts faster) or [Docker®](https://www.docker.com/products/docker-desktop/) (make sure to choose "Apple Chip" instead of "Intel Chip"). If both are installed, OrbStack is used. With Docker Desktop, you may find it useful to disable the option "Open Docker Dashboard when Docker Desktop starts".
 
 Rosetta must be installed on your Mac. The installer will ask you to install it if it is not already installed.
 
@@ -45,9 +46,25 @@ inside the terminal. The container can be stopped by pressing `Ctrl-C` inside th
 
 USB flashing support is limited, see the "USB Connection" paragraph below.
 
-If you want to exchange files with the container, you need to store them inside the "vivado-on-silicon-mac-main" folder. Inside Vivado, the files will be accessible via the "/home/user" folder.
+Your macOS home folder is available inside the container under the same path as in macOS (e.g. `/Users/you/Desktop/Projects`), so projects can stay wherever they are, e.g. in a Git repository. The installation folder itself is accessible via the "/home/user" folder.
 
-You can allocate more/less memory and CPU resources to Vivado by going to the Resources tab in the Docker settings.
+On Retina displays, the container runs at the full resolution of the display with the UI scaled by 2, so text is sharp. Use Screen Sharing in full screen or with scaling turned on. To change this, edit the `scripts/vnc_resolution` and `scripts/ui_scale` (1 or 2) files.
+
+The setup gives the container 5 GiB of memory. You can allocate more/less memory and CPU resources to Vivado in the OrbStack or Docker settings.
+
+### Command line usage
+The tools can also be run without the GUI from any macOS terminal, e.g. in VS Code. They run in the current folder, which makes them suitable for scripted builds:
+```
+scripts/xilinx.sh vivado -mode batch -source build.tcl
+scripts/xilinx.sh vivado -mode tcl
+```
+For convenience, the `bin` folder contains links named after the tools (`vivado`, `vitis`, `xsct`, `xvlog`, `xvhdl`, `xelab`, `xsim`). After adding it to your `PATH`, e.g. with `export PATH="$PATH:/path/to/vivado-on-silicon-mac/bin"` in `~/.zshrc`, they can be called directly:
+```
+xvlog --sv src/*.sv tb/tb.sv
+xelab tb -debug typical -s tb_sim
+xsim tb_sim
+```
+Without `-R` or `-tclbatch`, `xsim` opens an interactive Tcl prompt that accepts commands such as `run 50us` or `restart`. To view waveforms on macOS without the GUI, write a VCD file (e.g. `$dumpfile`/`$dumpvars` in a Verilog testbench, or `open_vcd`/`log_vcd` in xsim) and open it with a waveform viewer such as [Surfer](https://surfer-project.org).
 
 ### Notes
 

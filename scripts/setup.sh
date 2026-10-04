@@ -77,16 +77,28 @@ do
 	fi
 	# check file hash
 	file_hash=$(md5 -q "$installation_binary")
-	set_vivado_version_from_hash "$file_hash"
-	if [ "$?" -eq 0 ]
+	if set_vivado_version_from_hash "$file_hash"
 	then
 		f_echo "Valid file provided. Detected version $vivado_version"
 		break
+	elif set_vivado_version_from_filename "$installation_binary"
+	then
+		f_echo "Detected version $vivado_version from the file name, but its hash is not known to this script."
+		f_echo "MD5: $file_hash"
+		f_echo "Compare it with the MD5 SUM listed on AMD's download page. Does it match [y/N]?"
+		read hash_matches
+		if [[ $hash_matches == [yY]* ]]
+		then
+			break
+		fi
+		f_echo "Download the installer again and retry."
+		continue
 	else
 		f_echo "File corrupted or version not supported."
 		continue
 	fi
 done
+echo -n "$vivado_version" > "$script_dir/install_version"
 
 # write file path to "install_bin"
 install_bin_path="${installation_binary#$parent_dir}"
@@ -132,10 +144,16 @@ then
 	exit 1
 fi
 
-# Set VNC resolution
+# Set VNC resolution, matching the display so that text is sharp on Retina displays
+read display_resolution ui_scale <<< "$(main_display_mode)"
+if ! [[ $display_resolution =~ "^[0-9]+x[0-9]+$" && $ui_scale =~ "^[12]$" ]]
+then
+	display_resolution=$vnc_default_resolution
+	ui_scale=1
+fi
 f_echo "Set the resolution of the container. Keep in mind that high resolutions might make text and images appear small."
-f_echo "You can change the resolution manually in the vnc_resolution file later."
-f_echo "Press enter to leave the default (1920x1080) or type in your preference:"
+f_echo "You can change the resolution and the UI scale (1 or 2) manually in the vnc_resolution and ui_scale files later."
+f_echo "Press enter to match your display ($display_resolution at ${ui_scale}x scale) or type in your preference:"
 read resolution
 # if resolution has the right format
 if [[ $resolution =~ "^[0-9]+x[0-9]+$" ]]
@@ -143,9 +161,10 @@ then
 	f_echo "Setting $resolution as resolution"
 	echo "$resolution" > "$script_dir/vnc_resolution"
 else
-	f_echo "Setting the default of $vnc_default_resolution"
-	echo "$vnc_default_resolution" > "$script_dir/vnc_resolution"
+	f_echo "Setting the default of $display_resolution"
+	echo "$display_resolution" > "$script_dir/vnc_resolution"
 fi
+echo "$ui_scale" > "$script_dir/ui_scale"
 echo ""
 
 # copy de_start.desktop autostart file

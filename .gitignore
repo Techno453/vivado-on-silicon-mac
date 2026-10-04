@@ -14,3 +14,7 @@ installer/
 .vnc/
 .xsession-errors
 scripts/install_bin
+scripts/install_version
+.Xresources
+.xsessionrc
+scripts/ui_scale

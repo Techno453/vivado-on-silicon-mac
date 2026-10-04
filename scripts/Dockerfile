@@ -25,6 +25,11 @@ RUN apt-get install -y --no-install-recommends \
     ocl-icd-opencl-dev libjpeg62-dev libc6-dev-i386 graphviz make \
     unzip libtinfo5 xvfb libncursesw5 locales libswt-gtk-4-jni
 
+# install dependencies for the Electron-based Vitis Unified IDE (2024.2+)
+RUN apt-get install -y --no-install-recommends \
+    zip libnss3 libgbm1 libasound2 libxss1 libsecret-1-0 libgtk-3-0 \
+    libxkbfile1 libxshmfence1 libdrm2 libnotify4 xdg-utils
+
 # install vnc server (with recommended installs)
 RUN apt-get install -y \
     tigervnc-standalone-server tigervnc-xorg-extension
