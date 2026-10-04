@@ -37,9 +37,15 @@ then
 		f_echo "Generating the install configuration failed."
 		exit 1
 	fi
-	sed "s|^Destination=.*|Destination=/home/user/Xilinx|" /home/user/.Xilinx/install_config.txt > "$install_config"
+	sed -e "s|^Destination=.*|Destination=/home/user/Xilinx|" \
+		-e "s|^EnableDiskUsageOptimization=.*|EnableDiskUsageOptimization=1|" \
+		/home/user/.Xilinx/install_config.txt > "$install_config"
+	if ! grep -q "^EnableDiskUsageOptimization=" "$install_config"
+	then
+		echo "EnableDiskUsageOptimization=1" >> "$install_config"
+	fi
 	f_echo "The configuration was saved to scripts/install_configs/${vivado_version}.txt"
-	f_echo "To save disk space, open it on macOS now and set unneeded device families in the Modules line from :1 to :0."
+	f_echo "To save disk space, open it on macOS now and set every device family you do not need in the Modules line from :1 to :0 (e.g. keep only Zynq-7000 for a Zynq-7000 board)."
 	wait_for_user_input
 fi
 
@@ -65,6 +71,8 @@ fi
 
 if /home/user/installer/xsetup -c "$install_config" -b Install -a "${eula_args}"
 then
+    # The extracted installer is only needed for the installation
+    rm -rf /home/user/installer
     f_echo "Vivado was successfully installed."
     f_echo "Run start_container.sh to launch it."
 else
