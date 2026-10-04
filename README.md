@@ -35,6 +35,8 @@ caffeinate -dim zsh ./scripts/setup.sh
 ```
 5. Follow the instructions (in yellow) from the terminal.
 
+Instead of dragging the installer into the terminal, you can also pass it as an argument: `zsh ./scripts/setup.sh FPGAs_AdaptiveSoCs_Unified_2024.2_1113_2356_Lin64.bin`
+
 Note that the installation requires You to log into Your AMD account. When asked to, allow "Terminal" to access data of other apps (the installation may succeed regardless).
 
 ### Usage

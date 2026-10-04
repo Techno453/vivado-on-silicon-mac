@@ -62,12 +62,26 @@ fi
 # Get Vivado installation file
 f_echo "You need to put the Vivado installation file into this folder if you have not done so already."
 installation_binary=""
+# The installation binary can also be passed as the first argument
+installer_arg=$1
 while true
 do
 	installation_binary=""
 	# Get the absolute path to the file
-	f_echo "Then, drag and drop the Vivado installation binary into this terminal window and press Enter: "
-	read installation_binary
+	if [ -n "$installer_arg" ]
+	then
+		installation_binary=$installer_arg
+		installer_arg=""
+	else
+		f_echo "Then, drag and drop the Vivado installation binary into this terminal window and press Enter: "
+		read installation_binary
+	fi
+	# Some terminals wrap dropped paths in quotes and append a space
+	installation_binary=$(printf '%s' "$installation_binary" | sed -E "s/^[[:space:]]+//; s/[[:space:]]+$//; s/^'(.*)'$/\1/; s/^\"(.*)\"$/\1/")
+	if [ -n "$installation_binary" ]
+	then
+		installation_binary=${installation_binary:A}
+	fi
 	# check if it is accessible from the container
 	parent_dir=$(dirname "$script_dir")
 	if ! [[ $installation_binary == $parent_dir/* ]]
