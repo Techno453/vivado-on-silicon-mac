@@ -18,3 +18,4 @@ scripts/install_version
 .Xresources
 .xsessionrc
 scripts/ui_scale
+*.vsix

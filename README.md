@@ -74,11 +74,16 @@ Without `-R` or `-tclbatch`, `xsim` opens an interactive Tcl prompt that accepts
 fpga sim <testbench> [time]   # compiles all VHDL/Verilog in dependency order and writes build/sim/<testbench>.vcd
 fpga build [top]              # builds the Vivado project (.xpr) in the folder, or <top> from the sources and .xdc files
 fpga program [bitstream]      # programs the newest bitstream in build/ over the board's FTDI USB-JTAG
-fpga init                     # adds VS Code tasks, a VHDL LS config and .gitignore entries to the folder
+fpga init                     # adds a VHDL LS config and .gitignore entries to the folder
 ```
 Builds without a Vivado project use the part `xc7z010clg400-1` unless `FPGA_PART` is set. Programming starts xvcd for the FTDI chip it finds (`FPGA_JTAG_INTERFACE` selects the FTDI interface, default 0).
 
-After `fpga init`, the VS Code tasks run these commands: Cmd+Shift+B builds, and the tasks "FPGA: Simulate current testbench" (simulates the testbench open in the editor and opens its waveforms) and "FPGA: Program board" are available under Terminal > Run Task. Errors link to the offending line.
+### VS Code extension
+The `vscode-extension` folder contains an extension with buttons for these commands: Simulate, Build and Program in the status bar, a run button on HDL files that simulates the testbench in the file and opens its waveforms, and an FPGA sidebar. Vivado's errors appear in the Problems panel. The extension also starts the container when needed and stops it after 10 idle minutes (setting `fpgaTools.autoStopMinutes`). Install it with:
+```
+python3 vscode-extension/build_vsix.py
+code --install-extension vscode-extension/fpga-tools-0.1.0.vsix
+```
 
 ### Notes
 

@@ -6,7 +6,7 @@
 #   fpga build [top]              build a bitstream into build/, from the Vivado
 #                                 project (.xpr) if there is one, else from the sources
 #   fpga program [bitstream]      program the board over its FTDI USB-JTAG
-#   fpga init                     add VS Code tasks and a VHDL LS config to this folder
+#   fpga init                     add a VHDL LS config and .gitignore entries to this folder
 # The part for builds without a Vivado project can be set with FPGA_PART.
 
 script_dir=$(dirname -- "$(readlink -nf $0)";)
@@ -266,15 +266,6 @@ EOF
 }
 
 function cmd_init {
-	local fpga_bin="${script_dir:h}/bin/fpga"
-	mkdir -p .vscode
-	if [ -f .vscode/tasks.json ]
-	then
-		f_echo ".vscode/tasks.json already exists, not changing it."
-	else
-		sed "s|@FPGA@|$fpga_bin|g" "$script_dir/templates/tasks.json" > .vscode/tasks.json
-		f_echo "Added .vscode/tasks.json"
-	fi
 	if [ -f vhdl_ls.toml ]
 	then
 		f_echo "vhdl_ls.toml already exists, not changing it."
