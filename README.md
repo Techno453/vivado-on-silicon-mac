@@ -72,10 +72,12 @@ Without `-R` or `-tclbatch`, `xsim` opens an interactive Tcl prompt that accepts
 `bin/fpga` wraps the common steps for a design in the current folder:
 ```
 fpga sim <testbench> [time]   # compiles all VHDL/Verilog in dependency order and writes build/sim/<testbench>.vcd
-fpga build [top]              # builds the Vivado project (.xpr) in the folder, or <top> from the sources and .xdc files
+fpga build [top]              # builds the bitstream of the Vivado project (.xpr) in the folder, or of <top> from the sources and .xdc files
 fpga program [bitstream]      # programs the newest bitstream in build/ over the board's FTDI USB-JTAG
 fpga init                     # adds a VHDL LS config and .gitignore entries to the folder
 ```
+Vivado projects are built in a single Vivado process (non-project mode) with the sources, constraints and IP cores of the project, which is about twice as fast as project mode under Rosetta. The project's folders are not changed; IP cores are synthesized once into `build/ip`. Projects with block designs are built in project mode, which `FPGA_PROJECT_MODE=1` also forces. Builds are much slower in Low Power Mode and when macOS has to compress or swap memory, so close memory-hungry apps on 8 GB Macs.
+
 Builds without a Vivado project use the part `xc7z010clg400-1` unless `FPGA_PART` is set. Programming starts xvcd for the FTDI chip it finds (`FPGA_JTAG_INTERFACE` selects the FTDI interface, default 0).
 
 ### VS Code extension

@@ -193,6 +193,13 @@ function cmd_build {
 	then
 		f_echo "There are several Vivado projects in this folder. Run fpga build from the folder of one of them."
 		exit 1
+	elif (( $#projects == 1 )) && [ -z "$FPGA_PROJECT_MODE" ] &&
+		local fast_tcl=$(python3 "$script_dir/xpr_build.py" "${projects[1]}" "$build_dir") && [ -n "$fast_tcl" ]
+	then
+		# Single Vivado process, much faster under Rosetta than project mode;
+		# FPGA_PROJECT_MODE=1 uses project mode instead
+		f_echo "Building ${projects[1]:t} in a single Vivado process"
+		{ progress_proc; cat "$fast_tcl"; } > "$tcl"
 	elif (( $#projects == 1 ))
 	then
 		f_echo "Building the Vivado project ${projects[1]:t}"
