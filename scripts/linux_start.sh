@@ -12,8 +12,9 @@ mkdir /home/user/.vnc &> /dev/null
 cat "$script_dir/vncpasswd" | vncpasswd -f > /home/user/.vnc/passwd
 
 # Scale the UI for Retina displays. The X session loads both files on startup:
-# Xft.dpi scales fonts and Electron apps (Vitis), GDK_SCALE scales Java (Vivado)
-# and GTK3 apps, and GDK_DPI_SCALE undoes the double font scaling in GTK3.
+# Xft.dpi scales fonts and Electron apps (Vitis), GDK_SCALE scales GTK3 apps,
+# GDK_DPI_SCALE undoes the double font scaling in GTK3, and _JAVA_OPTIONS
+# scales Java, including the JVM embedded in Vivado, which ignores GDK_SCALE.
 ui_scale=1
 if [ -f "$script_dir/ui_scale" ]
 then
@@ -23,6 +24,7 @@ echo "Xft.dpi: $((96 * ui_scale))" > /home/user/.Xresources
 cat > /home/user/.xsessionrc << EOF
 export GDK_SCALE=$ui_scale
 export GDK_DPI_SCALE=$(awk "BEGIN { print 1 / $ui_scale }")
+export _JAVA_OPTIONS="-Dsun.java2d.uiScale=$ui_scale"
 EOF
 
 vncserver -DisconnectClients -NeverShared -nocursor -geometry $(tr -d "\n\r\t " < "$script_dir/vnc_resolution") -SecurityTypes VncAuth -PasswordFile /home/user/.vnc/passwd -localhost no -verbose -fg -RawKeyboard -RemapKeys "0xffe9->0xff7e,0xffe7->0xff7e" -- LXDE
