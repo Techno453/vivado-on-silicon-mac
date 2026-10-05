@@ -28,7 +28,8 @@ RUN apt-get install -y --no-install-recommends \
 # install dependencies for the Electron-based Vitis Unified IDE (2024.2+)
 RUN apt-get install -y --no-install-recommends \
     zip libnss3 libgbm1 libasound2 libxss1 libsecret-1-0 libgtk-3-0 \
-    libxkbfile1 libxshmfence1 libdrm2 libnotify4 xdg-utils
+    libxkbfile1 libxshmfence1 libdrm2 libnotify4 xdg-utils \
+    file fdisk lsb-release
 
 # install vnc server (with recommended installs)
 RUN apt-get install -y \
