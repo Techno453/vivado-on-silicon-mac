@@ -162,5 +162,16 @@ tcl.append(f"write_bitstream -force {{{build_dir}/{top}.bit}}")
 tcl.append("report_progress 100 Done")
 
 script = os.path.join(build_dir, "fast_build.tcl")
-open(script, "w").write("\n".join(tcl) + "\n")
+content = "\n".join(tcl) + "\n"
+
+# Like Vivado's run management, nothing is rebuilt when the bitstream is newer than the
+# project and all of its inputs, and the build itself (files, settings) is unchanged
+bitstream = os.path.join(build_dir, top + ".bit")
+inputs = [project] + [path for path, _ in source_files if os.path.exists(path)] + synth_xdc + impl_xdc + xcis
+if (os.path.exists(bitstream) and os.path.exists(script) and open(script).read() == content
+		and all(os.path.getmtime(path) < os.path.getmtime(bitstream) for path in inputs if os.path.exists(path))):
+	print("UP_TO_DATE")
+	sys.exit(0)
+
+open(script, "w").write(content)
 print(script)

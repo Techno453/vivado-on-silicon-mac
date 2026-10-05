@@ -198,6 +198,12 @@ function cmd_build {
 	then
 		# Single Vivado process, much faster under Rosetta than project mode;
 		# FPGA_PROJECT_MODE=1 uses project mode instead
+		if [[ $fast_tcl == UP_TO_DATE ]]
+		then
+			echo "100 Done" > "$build_dir/progress"
+			f_echo "The bitstream in build/ is up to date."
+			return
+		fi
 		f_echo "Building ${projects[1]:t} in a single Vivado process"
 		{ progress_proc; cat "$fast_tcl"; } > "$tcl"
 	elif (( $#projects == 1 ))
