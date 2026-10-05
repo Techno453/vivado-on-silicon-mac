@@ -134,6 +134,44 @@ function setBusy(label) {
 	vscode.commands.executeCommand("setContext", "fpgaTools.busy", busy);
 }
 
+function formatDuration(milliseconds) {
+	const seconds = Math.floor(milliseconds / 1000);
+	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+// Shows the step fpga writes to build/progress (e.g. "60 Placing") as a progress
+// notification with a Cancel button, and in the status bar
+function showProgress(key, title, progressFile, finished, cancel) {
+	vscode.window.withProgress(
+		{ location: vscode.ProgressLocation.Notification, title: `FPGA: ${title}`, cancellable: true },
+		(progress, token) => {
+			token.onCancellationRequested(cancel);
+			const start = Date.now();
+			let shown = 0;
+			const update = () => {
+				let percent = shown;
+				let step = "Starting";
+				try {
+					const [value, ...words] = fs.readFileSync(progressFile, "utf8").trim().split(" ");
+					percent = Math.max(shown, Number(value) || 0);
+					step = words.join(" ");
+				} catch (error) {
+					// No progress written yet
+				}
+				progress.report({ increment: percent - shown, message: `${step} (${percent}%, ${formatDuration(Date.now() - start)})` });
+				shown = percent;
+				const item = statusItems[key];
+				if (item) {
+					item.text = `$(sync~spin) ${item.idleText} ${percent}%`;
+				}
+			};
+			update();
+			const timer = setInterval(update, 1000);
+			return finished.finally(() => clearInterval(timer));
+		}
+	);
+}
+
 // Runs bin/fpga with the given arguments as a task and resolves with its exit code
 async function runFpga(key, title, args, dir) {
 	if (running) {
@@ -152,7 +190,9 @@ async function runFpga(key, title, args, dir) {
 		return undefined;
 	}
 	await vscode.workspace.saveAll(false);
-	const env = {};
+	// The container gets a name, so that cancelling can stop it
+	const containerName = `fpga-${Date.now()}`;
+	const env = { FPGA_CONTAINER: containerName };
 	if (config().get("part")) {
 		env.FPGA_PART = config().get("part");
 	}
@@ -168,8 +208,10 @@ async function runFpga(key, title, args, dir) {
 	running = title;
 	setBusy(key);
 	try {
+		const progressFile = path.join(dir, "build", "progress");
+		fs.rmSync(progressFile, { force: true });
 		const execution = await vscode.tasks.executeTask(task);
-		return await new Promise((resolve) => {
+		const finished = new Promise((resolve) => {
 			const listener = vscode.tasks.onDidEndTaskProcess((event) => {
 				if (event.execution === execution) {
 					listener.dispose();
@@ -177,6 +219,16 @@ async function runFpga(key, title, args, dir) {
 				}
 			});
 		});
+		if (key === "build" || key === "simulate") {
+			showProgress(key, title, progressFile, finished, () => {
+				const docker = dockerPath();
+				if (docker) {
+					run(docker, ["kill", containerName]);
+				}
+				execution.terminate();
+			});
+		}
+		return await finished;
 	} finally {
 		running = null;
 		setBusy(null);

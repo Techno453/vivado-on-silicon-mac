@@ -9,6 +9,7 @@
 #                                 project (.xpr) if there is one, else from the sources
 #   fpga program [bitstream]      program the board over its FTDI USB-JTAG
 #   fpga init                     add a VHDL LS config and .gitignore entries to this folder
+#   fpga vhdl-ls                  only write the VHDL LS config (vhdl_ls.toml)
 # The part for builds without a Vivado project can be set with FPGA_PART.
 
 script_dir=$(dirname -- "$(readlink -nf $0)";)
@@ -20,7 +21,7 @@ xilinx="$script_dir/xilinx.sh"
 build_dir="$PWD/build"
 
 function usage {
-	f_echo "Usage: fpga sim <testbench> [time] | fpga build [top] | fpga program [bitstream] | fpga init"
+	f_echo "Usage: fpga sim <testbench> [time] | fpga build [top] | fpga program [bitstream] | fpga init | fpga vhdl-ls"
 	exit 1
 }
 
@@ -69,7 +70,11 @@ function sim_project {
 	local backup="$sim_dir/project.xpr.backup"
 	cp "$project" "$backup"
 	trap "cp ${(q)backup} ${(q)project}" EXIT
+	trap "cp ${(q)backup} ${(q)project}; exit 130" INT TERM HUP
+	rm -f "$build_dir/progress"
 	{
+		progress_proc
+		echo 'report_progress 5 {Opening the project}'
 		echo "open_project {$project}"
 		if [ -n "$tb" ]
 		then
@@ -77,14 +82,17 @@ function sim_project {
 		fi
 		echo 'set top [get_property top [get_filesets sim_1]]'
 		echo '# The launch runs the default time of the project first, so the simulation is restarted'
+		echo 'report_progress 15 {Compiling and elaborating}'
 		echo 'launch_simulation -simset sim_1 -mode behavioral'
 		echo 'restart'
 		echo "open_vcd [file join {$sim_dir} \$top.vcd]"
 		echo 'log_vcd [get_objects -r *]'
+		echo "report_progress 60 {Simulating $sim_time}"
 		echo "run $sim_time"
 		echo 'close_vcd'
 		echo 'close_sim'
 		echo 'close_project'
+		echo 'report_progress 100 Done'
 		echo 'puts "SIMULATION_TOP=$top"'
 	} > "$sim_dir/project_sim.tcl"
 	local output
@@ -162,9 +170,23 @@ function tcl_list {
 	done
 }
 
+# Tcl procedure that prints progress for the terminal and writes it to
+# build/progress, which the VS Code extension shows as a progress bar
+function progress_proc {
+	cat << EOF
+proc report_progress {percent message} {
+	puts "FPGA_PROGRESS \$percent% \$message"
+	set f [open {$build_dir/progress} w]
+	puts \$f "\$percent \$message"
+	close \$f
+}
+EOF
+}
+
 function cmd_build {
 	local top=$1
 	mkdir -p "$build_dir"
+	rm -f "$build_dir/progress"
 	local tcl="$build_dir/build.tcl"
 	local projects=(${(M)${(f)"$(find_files)"}:#*.xpr})
 	if (( $#projects > 1 ))
@@ -174,11 +196,70 @@ function cmd_build {
 	elif (( $#projects == 1 ))
 	then
 		f_echo "Building the Vivado project ${projects[1]:t}"
-		cat > "$tcl" << EOF
+		{
+			progress_proc
+			cat << EOF
 open_project {${projects[1]}}
-reset_run synth_1
-launch_runs impl_1 -to_step write_bitstream -jobs 4
-wait_on_run impl_1
+set synth [get_runs synth_1]
+set impl [get_runs impl_1]
+# Like Generate Bitstream in the GUI, only what is out of date runs again
+if {[get_property NEEDS_REFRESH \$synth] || [get_property PROGRESS \$synth] ne "100%"} {
+	reset_run \$synth
+}
+if {[get_property NEEDS_REFRESH \$impl] || [get_property STATUS \$impl] ne "write_bitstream Complete!"} {
+	reset_run \$impl
+	launch_runs \$impl -to_step write_bitstream -jobs 4
+	set steps {
+		opt_design {50 Optimizing}
+		power_opt_design {55 {Optimizing power}}
+		place_design {60 Placing}
+		post_place_power_opt_design {72 {Optimizing power}}
+		phys_opt_design {75 {Optimizing placement}}
+		route_design {80 Routing}
+		post_route_phys_opt_design {90 {Optimizing routing}}
+		write_bitstream {93 {Writing the bitstream}}
+	}
+	set last ""
+	while {1} {
+		# Waits up to 3 seconds, then reports the current step
+		if {[catch {wait_on_run -timeout 0.05 \$impl}]} {
+			after 3000
+		}
+		set synth_status [get_property STATUS \$synth]
+		set impl_status [get_property STATUS \$impl]
+		if {[get_property PROGRESS \$impl] eq "100%" || [regexp -nocase {error|fail|cancel} "\$synth_status \$impl_status"]} {
+			break
+		}
+		if {[get_property PROGRESS \$synth] ne "100%"} {
+			set ip_running 0
+			foreach ip_run [get_runs -quiet -filter {IS_SYNTHESIS && NAME != synth_1}] {
+				if {[regexp {Running} [get_property STATUS \$ip_run]]} {
+					set ip_running 1
+				}
+			}
+			if {[regexp {Running synth_design} \$synth_status]} {
+				set current {20 Synthesizing}
+			} elseif {\$ip_running} {
+				set current {5 {Synthesizing IP cores}}
+			} else {
+				set current {3 {Starting synthesis}}
+			}
+		} else {
+			set current {45 Implementing}
+			dict for {step info} \$steps {
+				if {[string first "Running \$step" \$impl_status] == 0} {
+					set current \$info
+				}
+			}
+		}
+		if {\$current ne \$last} {
+			report_progress [lindex \$current 0] [lindex \$current 1]
+			set last \$current
+		}
+	}
+} else {
+	puts "The bitstream is up to date."
+}
 if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
 	# The run logs hold the actual errors
 	foreach run {synth_1 impl_1} {
@@ -197,7 +278,9 @@ if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
 foreach bit [glob -nocomplain [file join [get_property DIRECTORY [get_runs impl_1]] *.bit]] {
 	file copy -force \$bit {$build_dir}
 }
+report_progress 100 Done
 EOF
+		} > "$tcl"
 	else
 		if [ -z "$top" ]
 		then
@@ -218,14 +301,21 @@ EOF
 			(( $#verilog )) && echo "read_verilog [list $(tcl_list $verilog)]"
 			(( $#sverilog )) && echo "read_verilog -sv [list $(tcl_list $sverilog)]"
 			(( $#xdc )) && echo "read_xdc [list $(tcl_list $xdc)]"
+			progress_proc
 			cat << EOF
+report_progress 10 Synthesizing
 synth_design -top $top -part $fpga_part
+report_progress 50 Optimizing
 opt_design
+report_progress 60 Placing
 place_design
+report_progress 80 Routing
 route_design
 report_utilization -file {$build_dir/utilization.rpt}
 report_timing_summary -file {$build_dir/timing.rpt}
+report_progress 93 {Writing the bitstream}
 write_bitstream -force {$build_dir/$top.bit}
+report_progress 100 Done
 EOF
 		} > "$tcl"
 	fi
@@ -315,14 +405,49 @@ EOF
 	fi
 }
 
-function cmd_init {
-	if [ -f vhdl_ls.toml ]
+# Writes vhdl_ls.toml for the VHDL LS extension. With Vivado projects, each project
+# becomes a library with the VHDL files it uses, so projects that keep their own
+# copies of shared files don't clash. Without projects, a generic template is used.
+function cmd_vhdl_ls {
+	local marker="# Generated by fpga vhdl-ls"
+	if [ -f vhdl_ls.toml ] && ! grep -qF -- "$marker" vhdl_ls.toml
 	then
-		f_echo "vhdl_ls.toml already exists, not changing it."
-	else
-		cp "$script_dir/templates/vhdl_ls.toml" vhdl_ls.toml
-		f_echo "Added vhdl_ls.toml"
+		f_echo "vhdl_ls.toml was not generated by fpga, not changing it."
+		return
 	fi
+	local projects=(${(M)${(f)"$(find_files)"}:#*.xpr})
+	if (( $#projects == 0 ))
+	then
+		{ echo "$marker"; cat "$script_dir/templates/vhdl_ls.toml"; } > vhdl_ls.toml
+	else
+		python3 - "$marker" $projects > vhdl_ls.toml << 'EOF'
+import os, re, sys
+marker, projects = sys.argv[1], sys.argv[2:]
+root = os.getcwd()
+print(marker + " from the Vivado projects; run it again after adding files or projects.")
+print("# Each project is a library, so work.* refers to the files of the same project.")
+print("[libraries]")
+for project in sorted(projects):
+	project_dir = os.path.dirname(project)
+	text = open(project, errors="ignore").read()
+	files = []
+	for fileset in re.finditer(r'<FileSet Name="(?:sources_1|sim_1)".*?</FileSet>', text, re.S):
+		for path in re.findall(r'<File Path="([^"]+\.vhdl?)"', fileset.group(0), re.I):
+			path = os.path.normpath(path.replace("$PPRDIR", project_dir))
+			if os.path.exists(path) and path not in files:
+				files.append(path)
+	name = re.sub(r"\W+", "_", os.path.relpath(project_dir, root)).strip("_").lower() or "design"
+	if not name[0].isalpha():
+		name = "lib_" + name
+	relative = ",\n\t".join('"%s"' % os.path.relpath(f, root).replace('"', '\\"') for f in files)
+	print(f"\n# {os.path.relpath(project, root)}\n{name}.files = [\n\t{relative},\n]")
+EOF
+	fi
+	f_echo "Wrote vhdl_ls.toml"
+}
+
+function cmd_init {
+	cmd_vhdl_ls
 	# Keep Vivado's output out of Git
 	touch .gitignore
 	local line
@@ -343,5 +468,6 @@ case $command in
 	build) cmd_build "$@" ;;
 	program) cmd_program "$@" ;;
 	init) cmd_init "$@" ;;
+	vhdl-ls) cmd_vhdl_ls "$@" ;;
 	*) usage ;;
 esac

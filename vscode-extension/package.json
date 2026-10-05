@@ -2,7 +2,7 @@
 	"name": "fpga-tools",
 	"displayName": "FPGA Tools",
 	"description": "Buttons to simulate, build and program FPGA designs with the Vivado container from vivado-on-silicon-mac",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"publisher": "techno453",
 	"repository": {
 		"type": "git",

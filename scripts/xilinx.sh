@@ -48,8 +48,15 @@ then
 	mounts+=(--mount type=bind,source="$PWD",target="$PWD")
 fi
 
+# A name lets the caller stop the container, e.g. when a VS Code task is cancelled
+name_flags=()
+if [ -n "$FPGA_CONTAINER" ]
+then
+	name_flags=(--name "$FPGA_CONTAINER")
+fi
+
 # The Vivado and, if installed, Vitis environments are loaded before running the tool.
-exec docker run --init --rm "${tty_flags[@]}" \
+exec docker run --init --rm "${tty_flags[@]}" "${name_flags[@]}" \
 	--mount type=bind,source="$script_dir/..",target="/home/user" \
 	"${mounts[@]}" \
 	--workdir "$PWD" --user user --env HOME=/home/user \
