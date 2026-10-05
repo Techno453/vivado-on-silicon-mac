@@ -7,6 +7,8 @@ Buttons for the `fpga` command of [vivado-on-silicon-mac](https://github.com/Tec
 - **FPGA sidebar:** all actions, including the Vivado GUI and starting or stopping the container
 - **Shortcuts:** Ctrl+Alt+S simulate, Ctrl+Alt+B build, Ctrl+Alt+P program
 
+The buttons only appear in the folders listed in `fpgaTools.projectFolders` (by default `~/Desktop/Code Work/AdvDigitalDesign`). In a repository with several labs, each action uses the lab folder with the Vivado project (.xpr) that contains the open file; for files outside of a lab, it asks for the lab. Simulations of Vivado projects use the project's sources, IP cores and testbench.
+
 Errors from Vivado appear in the Problems panel and link to the source line. The container starts when an action needs it and is stopped after `fpgaTools.autoStopMinutes` idle minutes (default 10).
 
 Waveforms open in the [Surfer](https://marketplace.visualstudio.com/items?itemName=surfer-project.surfer) extension if it is installed.

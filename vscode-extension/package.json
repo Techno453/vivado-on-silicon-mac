@@ -2,7 +2,7 @@
 	"name": "fpga-tools",
 	"displayName": "FPGA Tools",
 	"description": "Buttons to simulate, build and program FPGA designs with the Vivado container from vivado-on-silicon-mac",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"publisher": "techno453",
 	"repository": {
 		"type": "git",
@@ -38,6 +38,16 @@
 					"default": 10,
 					"minimum": 0,
 					"description": "Stop the Vivado container after this many idle minutes (no FPGA action and no container running). 0 keeps it running."
+				},
+				"fpgaTools.projectFolders": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [
+						"~/Desktop/Code Work/AdvDigitalDesign"
+					],
+					"description": "Show the FPGA buttons only in workspaces inside these folders. Empty shows them everywhere."
 				}
 			}
 		},
@@ -100,23 +110,64 @@
 			"editor/title": [
 				{
 					"command": "fpgaTools.simulate",
-					"when": "resourceExtname =~ /^\\.(vhdl?|s?v)$/",
+					"when": "resourceExtname =~ /^\\.(vhdl?|s?v)$/ && fpgaTools.enabled",
 					"group": "navigation"
+				}
+			],
+			"commandPalette": [
+				{
+					"command": "fpgaTools.simulate",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.build",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.program",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.openWaveform",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.openGui",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.init",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.startContainer",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.stopContainer",
+					"when": "fpgaTools.enabled"
+				},
+				{
+					"command": "fpgaTools.toggleContainer",
+					"when": "fpgaTools.enabled"
 				}
 			]
 		},
 		"keybindings": [
 			{
 				"command": "fpgaTools.simulate",
-				"key": "ctrl+alt+s"
+				"key": "ctrl+alt+s",
+				"when": "fpgaTools.enabled"
 			},
 			{
 				"command": "fpgaTools.build",
-				"key": "ctrl+alt+b"
+				"key": "ctrl+alt+b",
+				"when": "fpgaTools.enabled"
 			},
 			{
 				"command": "fpgaTools.program",
-				"key": "ctrl+alt+p"
+				"key": "ctrl+alt+p",
+				"when": "fpgaTools.enabled"
 			}
 		],
 		"viewsContainers": {
@@ -132,7 +183,8 @@
 			"fpgaTools": [
 				{
 					"id": "fpgaTools.actions",
-					"name": "Actions"
+					"name": "Actions",
+					"when": "fpgaTools.enabled"
 				}
 			]
 		},

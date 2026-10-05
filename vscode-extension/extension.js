@@ -29,6 +29,76 @@ function workspaceFolder() {
 	return folder || (vscode.workspace.workspaceFolders || [])[0];
 }
 
+function expandHome(folder) {
+	return path.resolve(folder.replace(/^~(?=$|\/)/, os.homedir()));
+}
+
+// The buttons are only shown in the folders listed in fpgaTools.projectFolders (all if empty)
+function isEnabled() {
+	const allowed = config().get("projectFolders").map(expandHome);
+	if (allowed.length === 0) {
+		return true;
+	}
+	return (vscode.workspace.workspaceFolders || []).some((folder) =>
+		allowed.some((dir) => folder.uri.fsPath === dir || folder.uri.fsPath.startsWith(dir + path.sep))
+	);
+}
+
+// The folder to run fpga in: the closest folder with a Vivado project (.xpr) above the
+// open file, so each lab of a repository is handled on its own. Files outside of a lab,
+// e.g. shared components, ask for the lab and remember it.
+async function projectFolder() {
+	const workspace = workspaceFolder();
+	if (!workspace) {
+		return undefined;
+	}
+	const root = workspace.uri.fsPath;
+	const editor = vscode.window.activeTextEditor;
+	if (editor && editor.document.uri.scheme === "file") {
+		let dir = path.dirname(editor.document.uri.fsPath);
+		while (dir.startsWith(root)) {
+			if (fs.readdirSync(dir).some((name) => name.endsWith(".xpr"))) {
+				return dir;
+			}
+			if (dir === root) {
+				break;
+			}
+			dir = path.dirname(dir);
+		}
+	}
+	const projects = await vscode.workspace.findFiles(new vscode.RelativePattern(workspace, "**/*.xpr"), EXCLUDE_GLOB);
+	if (projects.length === 0) {
+		return root;
+	}
+	if (projects.length === 1) {
+		return path.dirname(projects[0].fsPath);
+	}
+	const last = context.workspaceState.get("project");
+	const items = projects
+		.map((project) => ({
+			label: path.basename(project.fsPath, ".xpr"),
+			description: vscode.workspace.asRelativePath(path.dirname(project.fsPath)),
+			dir: path.dirname(project.fsPath),
+		}))
+		.sort((a, b) => (b.dir === last) - (a.dir === last));
+	const picked = await vscode.window.showQuickPick(items, { placeHolder: "Which lab?" });
+	if (picked) {
+		context.workspaceState.update("project", picked.dir);
+	}
+	return picked && picked.dir;
+}
+
+// The simulation top of a Vivado project, read from its .xpr
+function projectSimulationTop(dir) {
+	const project = fs.readdirSync(dir).find((name) => name.endsWith(".xpr"));
+	if (!project) {
+		return undefined;
+	}
+	const xpr = fs.readFileSync(path.join(dir, project), "utf8");
+	const match = xpr.match(/<FileSet Name="sim_1"[\s\S]*?<Option Name="TopModule" Val="([^"]+)"/);
+	return match && match[1];
+}
+
 // Names of the VHDL entities or Verilog modules declared in a file
 function designUnits(text) {
 	const clean = text.replace(/--.*$/gm, "").replace(/\/\/.*$/gm, "");
@@ -37,8 +107,8 @@ function designUnits(text) {
 	return vhdl.concat(verilog);
 }
 
-async function workspaceUnits(folder) {
-	const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, HDL_GLOB), EXCLUDE_GLOB);
+async function workspaceUnits(dir) {
+	const files = await vscode.workspace.findFiles(new vscode.RelativePattern(dir, HDL_GLOB), EXCLUDE_GLOB);
 	const units = [];
 	for (const file of files) {
 		const text = (await vscode.workspace.fs.readFile(file)).toString();
@@ -65,7 +135,7 @@ function setBusy(label) {
 }
 
 // Runs bin/fpga with the given arguments as a task and resolves with its exit code
-async function runFpga(key, title, args, folder) {
+async function runFpga(key, title, args, dir) {
 	if (running) {
 		vscode.window.showWarningMessage(`FPGA: wait until "${running}" has finished.`);
 		return undefined;
@@ -88,10 +158,10 @@ async function runFpga(key, title, args, folder) {
 	}
 	const task = new vscode.Task(
 		{ type: "fpgaTools", action: args[0] },
-		folder,
+		workspaceFolder() || vscode.TaskScope.Workspace,
 		title,
 		"FPGA",
-		new vscode.ShellExecution(fpga, args, { cwd: folder.uri.fsPath, env }),
+		new vscode.ShellExecution(fpga, args, { cwd: dir, env }),
 		["$vivado", "$vivado-critical"]
 	);
 	task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, clear: true };
@@ -116,22 +186,26 @@ async function runFpga(key, title, args, folder) {
 }
 
 async function simulate(uri) {
-	const folder = workspaceFolder();
-	if (!folder) {
-		return;
-	}
-	// The testbench is the unit of the file the button was pressed on or that is open,
-	// otherwise one is picked from the workspace
 	const document = uri instanceof vscode.Uri
 		? await vscode.workspace.openTextDocument(uri)
 		: vscode.window.activeTextEditor && vscode.window.activeTextEditor.document;
-	let testbench;
+	if (uri instanceof vscode.Uri) {
+		await vscode.window.showTextDocument(document);
+	}
+	const dir = await projectFolder();
+	if (!dir) {
+		return;
+	}
+	// The testbench is the one in the open file; with a Vivado project, the project's
+	// simulation top is used otherwise, and without one, a testbench is picked
+	let testbench = "";
 	if (document && /\.(vhdl?|s?v)$/i.test(document.fileName)) {
 		const units = designUnits(document.getText());
-		testbench = units.find(isTestbench) || units[0];
+		testbench = units.find(isTestbench) || "";
 	}
-	if (!testbench) {
-		const units = (await workspaceUnits(folder)).filter((unit) => isTestbench(unit.name));
+	const projectTop = projectSimulationTop(dir);
+	if (!testbench && !projectTop) {
+		const units = (await workspaceUnits(dir)).filter((unit) => isTestbench(unit.name));
 		const picked = await vscode.window.showQuickPick(
 			units.map((unit) => ({ label: unit.name, description: vscode.workspace.asRelativePath(unit.file) })),
 			{ placeHolder: "Testbench to simulate" }
@@ -141,8 +215,9 @@ async function simulate(uri) {
 		}
 		testbench = picked.label;
 	}
+	const name = testbench || projectTop;
 	const time = await vscode.window.showInputBox({
-		title: `Simulate ${testbench}`,
+		title: `Simulate ${name}`,
 		prompt: "Simulation time, e.g. 50us, or all if the testbench stops by itself",
 		value: context.workspaceState.get("simTime", "50us"),
 	});
@@ -150,25 +225,24 @@ async function simulate(uri) {
 		return;
 	}
 	context.workspaceState.update("simTime", time);
-	const exitCode = await runFpga("simulate", `Simulate ${testbench}`, ["sim", testbench, time], folder);
+	const exitCode = await runFpga("simulate", `Simulate ${name}`, ["sim", testbench, time], dir);
 	if (exitCode === 0) {
-		const waveform = vscode.Uri.file(path.join(folder.uri.fsPath, "build", "sim", `${testbench}.vcd`));
+		const waveform = vscode.Uri.file(path.join(dir, "build", "sim", `${name}.vcd`));
 		context.workspaceState.update("lastWaveform", waveform.fsPath);
 		vscode.commands.executeCommand("vscode.open", waveform);
 	}
 }
 
 async function build() {
-	const folder = workspaceFolder();
-	if (!folder) {
+	const dir = await projectFolder();
+	if (!dir) {
 		return;
 	}
 	const args = ["build"];
-	const projects = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "**/*.xpr"), EXCLUDE_GLOB);
-	if (projects.length === 0) {
+	if (!fs.readdirSync(dir).some((name) => name.endsWith(".xpr"))) {
 		// Without a Vivado project, the top-level unit is picked, the last one first
 		const last = context.workspaceState.get("top");
-		const units = (await workspaceUnits(folder)).filter((unit) => !isTestbench(unit.name));
+		const units = (await workspaceUnits(dir)).filter((unit) => !isTestbench(unit.name));
 		units.sort((a, b) => (b.name === last) - (a.name === last));
 		const picked = await vscode.window.showQuickPick(
 			units.map((unit) => ({ label: unit.name, description: vscode.workspace.asRelativePath(unit.file) })),
@@ -180,7 +254,7 @@ async function build() {
 		context.workspaceState.update("top", picked.label);
 		args.push(picked.label);
 	}
-	const exitCode = await runFpga("build", "Build bitstream", args, folder);
+	const exitCode = await runFpga("build", "Build bitstream", args, dir);
 	if (exitCode === 0) {
 		const choice = await vscode.window.showInformationMessage("FPGA: The bitstream is ready in build/.", "Program Board");
 		if (choice) {
@@ -190,9 +264,9 @@ async function build() {
 }
 
 async function program() {
-	const folder = workspaceFolder();
-	if (folder) {
-		const exitCode = await runFpga("program", "Program board", ["program"], folder);
+	const dir = await projectFolder();
+	if (dir) {
+		const exitCode = await runFpga("program", "Program board", ["program"], dir);
 		if (exitCode === 0) {
 			vscode.window.showInformationMessage("FPGA: The board was programmed.");
 		}
@@ -203,7 +277,7 @@ async function openWaveform() {
 	let waveform = context.workspaceState.get("lastWaveform");
 	if (!waveform || !fs.existsSync(waveform)) {
 		const folder = workspaceFolder();
-		const files = folder ? await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "build/sim/*.vcd")) : [];
+		const files = folder ? await vscode.workspace.findFiles(new vscode.RelativePattern(folder, "**/build/sim/*.vcd")) : [];
 		if (files.length === 0) {
 			vscode.window.showInformationMessage("FPGA: There are no waveforms yet. Simulate a testbench first.");
 			return;
@@ -223,7 +297,7 @@ function openGui() {
 async function init() {
 	const folder = workspaceFolder();
 	if (folder) {
-		await runFpga("init", "Set up project folder", ["init"], folder);
+		await runFpga("init", "Set up project folder", ["init"], folder.uri.fsPath);
 	}
 }
 
@@ -269,7 +343,7 @@ async function runningContainers() {
 }
 
 async function refreshContainer() {
-	if (container.refreshing) {
+	if (container.refreshing || !isEnabled()) {
 		return;
 	}
 	container.refreshing = true;
@@ -419,17 +493,35 @@ function activate(extensionContext) {
 		context.subscriptions.push(item);
 	});
 	setBusy(null);
-	for (const item of Object.values(statusItems)) {
-		item.show();
-	}
 
 	const containerItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 96);
 	containerItem.command = "fpgaTools.toggleContainer";
 	statusItems.container = containerItem;
 	context.subscriptions.push(containerItem);
 	updateContainerItem();
-	containerItem.show();
 	refreshContainer();
+
+	const updateEnabled = () => {
+		const enabled = isEnabled();
+		vscode.commands.executeCommand("setContext", "fpgaTools.enabled", enabled);
+		for (const item of Object.values(statusItems)) {
+			if (enabled) {
+				item.show();
+			} else {
+				item.hide();
+			}
+		}
+	};
+	updateEnabled();
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeWorkspaceFolders(updateEnabled),
+		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration("fpgaTools")) {
+				updateEnabled();
+				updateContainerItem();
+			}
+		})
+	);
 	const timer = setInterval(refreshContainer, 15000);
 	context.subscriptions.push({ dispose: () => clearInterval(timer) });
 }

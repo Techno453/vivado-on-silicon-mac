@@ -2,7 +2,9 @@
 
 # Simulates, builds and programs FPGA designs in the current folder with the
 # tools in the container, e.g. from a terminal or VS Code tasks:
-#   fpga sim <testbench> [time]   simulate, waveforms go to build/sim/<testbench>.vcd
+#   fpga sim <testbench> [time]   simulate, waveforms go to build/sim/<testbench>.vcd;
+#                                 with a Vivado project (.xpr), the testbench may be
+#                                 empty ("") to use the project's simulation top
 #   fpga build [top]              build a bitstream into build/, from the Vivado
 #                                 project (.xpr) if there is one, else from the sources
 #   fpga program [bitstream]      program the board over its FTDI USB-JTAG
@@ -60,14 +62,62 @@ print("\n".join(ordered))
 EOF
 }
 
+# Simulates with the Vivado project, which includes its IP cores and settings.
+# Vivado records bookkeeping in the .xpr on every launch, so it is restored afterwards.
+function sim_project {
+	local project=$1 tb=$2 sim_time=$3 sim_dir=$4
+	local backup="$sim_dir/project.xpr.backup"
+	cp "$project" "$backup"
+	trap "cp ${(q)backup} ${(q)project}" EXIT
+	{
+		echo "open_project {$project}"
+		if [ -n "$tb" ]
+		then
+			echo "set_property top {$tb} [get_filesets sim_1]"
+		fi
+		echo 'set top [get_property top [get_filesets sim_1]]'
+		echo '# The launch runs the default time of the project first, so the simulation is restarted'
+		echo 'launch_simulation -simset sim_1 -mode behavioral'
+		echo 'restart'
+		echo "open_vcd [file join {$sim_dir} \$top.vcd]"
+		echo 'log_vcd [get_objects -r *]'
+		echo "run $sim_time"
+		echo 'close_vcd'
+		echo 'close_sim'
+		echo 'close_project'
+		echo 'puts "SIMULATION_TOP=$top"'
+	} > "$sim_dir/project_sim.tcl"
+	local output
+	output=$("$xilinx" vivado -mode batch -nojournal -nolog -source "$sim_dir/project_sim.tcl" 2>&1 | tee /dev/stderr)
+	local result=$pipestatus[1]
+	local top=${${(M)${(f)output}:#SIMULATION_TOP=*}#SIMULATION_TOP=}
+	if [[ $result -eq 0 && -n $top ]]
+	then
+		f_echo "Waveforms written to build/sim/$top.vcd"
+	else
+		f_echo "Simulation failed. The simulator logs are in the .sim folder of the project."
+		exit 1
+	fi
+}
+
 function cmd_sim {
 	local tb=$1 sim_time=${2:-all}
+	local sim_dir="$build_dir/sim"
+	mkdir -p "$sim_dir"
+	local projects=(${(M)${(f)"$(find_files)"}:#*.xpr})
+	if (( $#projects > 1 ))
+	then
+		f_echo "There are several Vivado projects in this folder. Run fpga sim from the folder of one of them."
+		exit 1
+	elif (( $#projects == 1 ))
+	then
+		sim_project "${projects[1]}" "$tb" "$sim_time" "$sim_dir"
+		return
+	fi
 	if [ -z "$tb" ]
 	then
 		usage
 	fi
-	local sim_dir="$build_dir/sim"
-	mkdir -p "$sim_dir"
 	local sources=(${(f)"$(find_files)"})
 	local vhdl=(${(M)sources:#*.(vhd|vhdl)})
 	local verilog=(${(M)sources:#*.v})
