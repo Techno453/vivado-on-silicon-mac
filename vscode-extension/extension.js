@@ -44,9 +44,30 @@ function isEnabled() {
 	);
 }
 
-// The folder to run fpga in: the closest folder with a Vivado project (.xpr) above the
-// open file, so each lab of a repository is handled on its own. Files outside of a lab,
-// e.g. shared components, ask for the lab and remember it.
+// The folder to run fpga in: the closest folder above the open file that holds a design,
+// i.e. a Vivado project (.xpr) or constraints (.xdc), so each lab of a repository is
+// handled on its own. Files outside of a lab, e.g. shared components, ask for the lab
+// and remember it.
+function isDesignFolder(dir) {
+	return fs.readdirSync(dir).some((name) => name.endsWith(".xpr") || name.endsWith(".xdc"));
+}
+
+async function designFolders(workspace) {
+	const projects = await vscode.workspace.findFiles(new vscode.RelativePattern(workspace, "**/*.xpr"), EXCLUDE_GLOB);
+	const projectDirs = projects.map((project) => path.dirname(project.fsPath));
+	const folders = projects.map((project) => ({ dir: path.dirname(project.fsPath), label: path.basename(project.fsPath, ".xpr") }));
+	const constraints = await vscode.workspace.findFiles(new vscode.RelativePattern(workspace, "**/*.xdc"), EXCLUDE_GLOB);
+	for (const dir of [...new Set(constraints.map((file) => path.dirname(file.fsPath)))]) {
+		const insideProject = projectDirs.some((projectDir) => dir === projectDir || dir.startsWith(projectDir + path.sep));
+		// Folders without VHDL/Verilog, e.g. example designs of IP cores, are not labs
+		const hdl = await vscode.workspace.findFiles(new vscode.RelativePattern(dir, HDL_GLOB), EXCLUDE_GLOB, 1);
+		if (!insideProject && hdl.length > 0) {
+			folders.push({ dir, label: path.basename(dir) });
+		}
+	}
+	return folders;
+}
+
 async function projectFolder() {
 	const workspace = workspaceFolder();
 	if (!workspace) {
@@ -57,7 +78,7 @@ async function projectFolder() {
 	if (editor && editor.document.uri.scheme === "file") {
 		let dir = path.dirname(editor.document.uri.fsPath);
 		while (dir.startsWith(root)) {
-			if (fs.readdirSync(dir).some((name) => name.endsWith(".xpr"))) {
+			if (isDesignFolder(dir)) {
 				return dir;
 			}
 			if (dir === root) {
@@ -66,20 +87,16 @@ async function projectFolder() {
 			dir = path.dirname(dir);
 		}
 	}
-	const projects = await vscode.workspace.findFiles(new vscode.RelativePattern(workspace, "**/*.xpr"), EXCLUDE_GLOB);
-	if (projects.length === 0) {
+	const folders = await designFolders(workspace);
+	if (folders.length === 0) {
 		return root;
 	}
-	if (projects.length === 1) {
-		return path.dirname(projects[0].fsPath);
+	if (folders.length === 1) {
+		return folders[0].dir;
 	}
 	const last = context.workspaceState.get("project");
-	const items = projects
-		.map((project) => ({
-			label: path.basename(project.fsPath, ".xpr"),
-			description: vscode.workspace.asRelativePath(path.dirname(project.fsPath)),
-			dir: path.dirname(project.fsPath),
-		}))
+	const items = folders
+		.map((folder) => ({ label: folder.label, description: vscode.workspace.asRelativePath(folder.dir), dir: folder.dir }))
 		.sort((a, b) => (b.dir === last) - (a.dir === last));
 	const picked = await vscode.window.showQuickPick(items, { placeHolder: "Which lab?" });
 	if (picked) {
