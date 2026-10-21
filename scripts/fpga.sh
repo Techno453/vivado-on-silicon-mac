@@ -7,7 +7,9 @@
 #                                 empty ("") to use the project's simulation top
 #   fpga build [top]              build a bitstream into build/, from the Vivado
 #                                 project (.xpr) if there is one, else from the sources
-#   fpga program [bitstream]      program the board over its FTDI USB-JTAG
+#   fpga program [bitstream]      program the board over its FTDI USB-JTAG, natively with
+#                                 openFPGALoader if installed (cable: FPGA_CABLE), else
+#                                 with Vivado through xvcd
 #   fpga init                     add a VHDL LS config and .gitignore entries to this folder
 #   fpga vhdl-ls                  only write the VHDL LS config (vhdl_ls.toml)
 # The part for builds without a Vivado project can be set with FPGA_PART.
@@ -344,15 +346,16 @@ EOF
 
 # Prints the product ID of the first FTDI USB device (vendor ID 0x0403)
 function ftdi_product_id {
-	system_profiler SPUSBDataType -json 2> /dev/null | python3 -c '
-import json, sys
-def walk(items):
-	for item in items:
-		yield item
-		yield from walk(item.get("_items", []))
-for item in walk(json.load(sys.stdin).get("SPUSBDataType", [])):
-	if item.get("vendor_id", "").startswith("0x0403"):
-		print(item.get("product_id", "").split()[0])
+	# ioreg instead of system_profiler, whose USB data type and keys changed in macOS 27
+	/usr/sbin/ioreg -p IOUSB -l -a 2> /dev/null | python3 -c '
+import plistlib, sys
+def walk(entry):
+	yield entry
+	for child in entry.get("IORegistryEntryChildren", []):
+		yield from walk(child)
+for entry in walk(plistlib.loads(sys.stdin.buffer.read())):
+	if entry.get("idVendor") == 0x0403:
+		print("0x%04x" % entry["idProduct"])
 		break'
 }
 
@@ -371,6 +374,29 @@ function cmd_program {
 	fi
 	bit=${bit:A}
 	mkdir -p "$build_dir"
+
+	# openFPGALoader programs natively and knows each cable's pinout, e.g. the buffer
+	# enables of Digilent JTAG-HS2 style FT232H cables, which xvcd leaves floating
+	local loader=${$(whence -p openFPGALoader):-/opt/homebrew/bin/openFPGALoader}
+	if [ -x "$loader" ]
+	then
+		local cable=$FPGA_CABLE
+		if [ -z "$cable" ]
+		then
+			case $(ftdi_product_id) in
+				0x6014) cable=digilent_hs2 ;;
+				0x6010) cable=digilent ;;
+				"")
+					f_echo "No FTDI USB-JTAG found. Is the board connected and switched on?"
+					exit 1
+					;;
+				*) cable=ft232 ;;
+			esac
+		fi
+		f_echo "Programming ${bit:t} over $cable"
+		"$loader" -c $cable "$bit"
+		exit $?
+	fi
 
 	# Forward the board's USB-JTAG to the container unless start_container.sh already does
 	local xvcd_pid=""
